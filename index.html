@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket CRUD Client</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #log { margin-top: 20px; }
+        #log div { margin-bottom: 10px; }
+        table, th, td { border: 1px solid black; border-collapse: collapse; }
+        th, td { padding: 8px; }
+    </style>
+</head>
+<body>
+    <h1>WebSocket CRUD Client</h1>
+    <button id="connectButton">Connect</button>
+
+    <div id="controls" style="display:none;">
+        <form id="crudForm">
+            <input type="hidden" id="itemId">
+            <input type="text" id="itemName" placeholder="Enter name">
+            <button type="submit">Save</button>
+        </form>
+        <button id="readButton">Load Items</button>
+        <table id="itemsTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div id="log"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            let socket;
+            const log = document.getElementById('log');
+            const controls = document.getElementById('controls');
+            const crudForm = document.getElementById('crudForm');
+            const itemIdInput = document.getElementById('itemId');
+            const itemNameInput = document.getElementById('itemName');
+            const itemsTableBody = document.querySelector('#itemsTable tbody');
+
+            function logMessage(message) {
+                const div = document.createElement('div');
+                div.textContent = message;
+                log.appendChild(div);
+            }
+
+            function renderTable(data) {
+                itemsTableBody.innerHTML = '';
+                data.forEach(item => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${item.id}</td>
+                        <td>${item.name}</td>
+                        <td>
+                            <button onclick="editItem(${item.id}, '${item.name}')">Edit</button>
+                            <button onclick="deleteItem(${item.id})">Delete</button>
+                        </td>
+                    `;
+                    itemsTableBody.appendChild(row);
+                });
+            }
+
+            window.editItem = function (id, name) {
+                itemIdInput.value = id;
+                itemNameInput.value = name;
+            }
+
+            window.deleteItem = function (id) {
+                socket.send(JSON.stringify({ action: 'delete', id }));
+            }
+
+            document.getElementById('connectButton').addEventListener('click', () => {
+                socket = new WebSocket('ws://localhost:8081');
+
+                socket.onopen = function () {
+                    logMessage('Connected to WebSocket server');
+                    controls.style.display = 'block';
+                };
+
+                socket.onmessage = function (event) {
+                    const response = JSON.parse(event.data);
+                    switch (response.action) {
+                        case 'create':
+                        case 'update':
+                        case 'delete':
+                            socket.send(JSON.stringify({ action: 'read' }));
+                            break;
+                        case 'read':
+                            renderTable(response.data);
+                            break;
+                    }
+                    logMessage('Message from server: ' + event.data);
+                };
+
+                socket.onclose = function () {
+                    logMessage('Disconnected from WebSocket server');
+                    controls.style.display = 'none';
+                };
+
+                socket.onerror = function (error) {
+                    logMessage('WebSocket error: ' + error);
+                };
+            });
+
+            crudForm.addEventListener('submit', (event) => {
+                event.preventDefault();
+                const id = itemIdInput.value;
+                const name = itemNameInput.value;
+                const action = id ? 'update' : 'create';
+                const data = { name };
+
+                if (action === 'update') {
+                    socket.send(JSON.stringify({ action, id, data }));
+                } else {
+                    socket.send(JSON.stringify({ action, data }));
+                }
+
+                itemIdInput.value = '';
+                itemNameInput.value = '';
+            });
+
+            document.getElementById('readButton').addEventListener('click', () => {
+                socket.send(JSON.stringify({ action: 'read' }));
+            });
+        });
+    </script>
+</body>
+</html>
